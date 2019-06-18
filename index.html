@@ -1,0 +1,248 @@
+<html>
+
+<head>
+</head>
+
+<body>
+    <canvas>
+
+    </canvas>
+    <script>
+
+        function scalify(n, scale) {
+            let sclen = scale.length - 1;
+            let p = ((n - n % sclen) / sclen) * scale[sclen];
+            p = p + scale[n % sclen];
+            return p;
+        }
+        async function playScale(scale) {
+            for (let i = 0; i < scale.length * 2; i++) {
+                let osc = context.createOscillator();
+                osc.type = "sawtooth";
+                let freq = 400 * 2 ** (1 / 12 * scalify(i, scale));
+                osc.frequency.setValueAtTime(freq, context.currentTime);
+                osc.connect(context.destination);
+                let st = context.currentTime;
+                osc.start(st + i * 0.3);
+                osc.stop(st + (i + 1) * 0.3);
+            }
+        }
+        ///      C D E F G A  B 
+        var major = [1, 3, 5, 6, 8, 10, 12, 12];
+        var minor = [1, 3, 4, 6, 8, 9, 12, 12];
+        var harmnc = [1, 3, 4, 6, 8, 10, 12, 12];
+        var pntic = [1, 3, 5, 8, 10, 12];
+        var pnthemi = [1, 3, 6, 8, 10, 12];
+        var pntmin = [1, 4, 6, 8, 11, 12];
+
+        var instrument = function (context, bias) {
+            let base = {
+                timbre: {
+                    base: 'sawtooth',
+                    custom: [],
+                    duty: 0.5
+                },
+                tone: {
+                    variance: 10,
+                    base: 0
+                },
+                theme: {
+                    bars: 4,
+                    beats: 4,
+                    duration: 700,
+                    noteChance: 0.5,
+                    scale: major
+                },
+            };
+            Object.assign(base, bias);
+            //generate theme
+            this.sequence = [];
+            for (let i = 0; i < base.theme.beats * base.theme.bars; i++) {
+                this.sequence.push(Math.random() < base.theme.noteChance);
+            }
+            for (let i = 0; i < base.theme.beats * base.theme.bars; i++) {
+                if (this.sequence[i]) this.sequence[i] = base.tone.base + Math.floor(Math.random() * base.tone.variance);
+                else this.sequence[i] = -1;
+            }
+            this.counter = 0;
+            this.interval = undefined;
+            this.start = function () {
+                this.interval = setInterval(() => {
+                    this.counter++;
+                    if (this.sequence[this.counter % this.sequence.length] != -1) {
+                        this.osc = context.createOscillator();
+                        //setup instrument
+                        this.osc.type = base.timbre.base;
+                        //find frequency
+                        let frequency = 55 * 2 ** (1 / 12 * scalify((this.sequence[this.counter % this.sequence.length]) + base.tone.base, base.theme.scale));
+                        this.osc.frequency.setValueAtTime(frequency, context.currentTime);
+                        this.osc.connect(context.destination);
+                        this.osc.start();
+                        this.osc.stop(context.currentTime + base.theme.duration / 1000 / base.theme.beats * (base.timbre.duty));
+                    }
+                }, base.theme.duration / base.theme.beats);
+            }
+            this.startIn = function (delay) {
+                setTimeout(() => { this.start() }, delay);
+            }
+            this.stop = () => { if (this.interval) clearInterval(this.interval); };
+        }
+        var context;
+        let c = document.querySelector("canvas");
+        let ctx = c.getContext('2d');
+        var beepers = [];
+
+        function ensemble(base, _instruments) {
+            //copy some base characteristics across
+            
+
+
+            this.instruments = [];
+            for (let i = 0; i < _instruments.length; i++) {
+                if (!_instruments[i][1]) this.instruments.push(undefined);
+                else {
+                    this.instruments.push(new instrument(base.context, _instruments[i][0]));
+                    this.instruments[i].start();
+                }
+            }
+            //set starting instruments
+            let me=this;
+            me.updateEnsemble = function () {
+                let action = Math.floor(Math.random() * 3);
+                switch (action) {
+                    case 0:
+                        let instrumentcount=0;
+                        for (let i=0;i<me.instruments.length;i++)if (me.instruments[i])instrumentcount++;
+                        if(Math.random()**2<instrumentcount/me.instruments.length) break;
+                        // make a new instrument
+                        for (let i = 0; i < me.instruments.length; i++) {
+                            if (!me.instruments[i]){
+                                me.instruments[i] = new instrument(base.context, _instruments[i][0]);
+                                me.instruments[i].start();
+                                console.log("instrument added");
+                                break;
+                            } 
+                        }
+                        
+                        break;
+                    case 1:
+                        // OR replace an instrument
+                        if (Math.random()<0.6)break;
+                        for (let i = me.instruments.length; i>-1; i--) {
+                            if (Math.random() > 0.5 && me.instruments[i]) {
+                                me.instruments[i].stop();
+                                me.instruments[i] = new instrument(base.context, _instruments[i][0]);
+                                me.instruments[i].start();
+                                console.log("instrument changed");
+                                break;
+                            }    
+                        }
+                        
+                        break;
+                    case 2:
+                        // OR kick an instrument
+                        if (Math.random()<0.99)break;
+                        for (let i = me.instruments.length; i>0; i--) {
+                            if (me.instruments[i] && !_instruments[i][1]) {
+                                me.instruments[i].stop();
+                                delete me.instruments[i];
+                                console.log("instrument kicked");
+                                break;
+                            }    
+                        }
+                        break;
+                }
+            }
+            setInterval(this.updateEnsemble, 1000);
+        }
+
+
+
+
+
+        c.addEventListener("click", () => {
+            if (!context) context = new AudioContext();
+            //nstruments
+            let bass = {
+                timbre: {
+                    base: 'sawtooth',
+                    custom: [],
+                    duty: 1
+                },
+                tone: {
+                    variance: 5,
+                    base: 0
+                },
+                theme: {
+                    bars: 4,
+                    beats: 1,
+                    duration: 1000,
+                    noteChance: 1,
+                    scale: pntmin
+                },
+            };
+            let treble = {
+                timbre: {
+                    base: 'sawtooth',
+                    custom: [],
+                    duty: 0.5
+                },
+                tone: {
+                    variance: 5,
+                    base: 5
+                },
+                theme: {
+                    bars: 4,
+                    beats: 2,
+                    duration: 1000,
+                    noteChance: 0.8,
+                    scale: pntmin
+                },
+            };
+            let sinble = {
+                timbre: {
+                    base: 'sawtooth',
+                    custom: [],
+                    duty: 0.5
+                },
+                tone: {
+                    variance:5,
+                    base: 10
+                },
+                theme: {
+                    bars: 4,
+                    beats: 4,
+                    duration: 1000,
+                    noteChance: 0.8,
+                    scale: pntmin
+                },
+            };
+            let sqible = {
+                timbre: {
+                    base: 'square',
+                    custom: [],
+                    duty: 0.5
+                },
+                tone: {
+                    variance: 10,
+                    base: 5
+                },
+                theme: {
+                    bars: 4,
+                    beats: 8,
+                    duration: 1000,
+                    noteChance: 0.8,
+                    scale: pntmin
+                },
+            };
+            let _ensemble = new ensemble({ context: context }, [
+                [bass, true],
+                [treble],
+                [sinble],
+                [sqible]
+            ]);
+        })
+    </script>
+</body>
+
+</html>
